@@ -9,7 +9,8 @@ st.markdown("**Only Section A & Section D are editable. All computations are aut
 
 uploaded_file = st.file_uploader("📤 Upload the RPWT Excel Template (Unprotected)", type=["xlsm", "xlsx"])
 if uploaded_file:
-    df = pd.read_excel(uploaded_file, sheet_name=None)
+    df = pd.read_excel(uploaded_file, sheet_name=None, engine='openpyxl')
+
 
     if 'Variables' in df:
         variables_df = df['Variables']
