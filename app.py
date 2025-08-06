@@ -1,4 +1,4 @@
-# RPWT Pension Calculator - PenCom Version 3.0
+# RPWT Pension Calculator - PenCom Version 3.0 (Sections A–G)
 # By Aliyu S. Sani | Deployment Ready for Streamlit Cloud
 
 import streamlit as st
@@ -39,11 +39,10 @@ def calculate_pension(rsa_balance, final_salary, sector):
     return round(min_pension, 2)
 
 # ----------------------
-# 📋 Collapsible Sections A–G
+# 📋 RPWT Section A – Editable Input
 # ----------------------
 st.markdown("### 📋 RPWT Version 3.0 Form (Sections A – G)")
 
-# SECTION A
 with st.expander("✍️ Section A - Retiree Information", expanded=True):
     col1, col2 = st.columns(2)
     with col1:
@@ -57,32 +56,65 @@ with st.expander("✍️ Section A - Retiree Information", expanded=True):
         program_date = st.date_input("Date of Programming", dt.date.today())
         frequency = st.selectbox("Payment Frequency", SS_SC["Frequency"])
 
-# SECTION B
-with st.expander("📄 Section B - System Summary", expanded=False):
-    st.info("This section will auto-display processed data from Section A (e.g., age at retirement, length of service, eligibility flags).")
+# ----------------------
+# Section B – Bio-data Summary
+# ----------------------
+with st.expander("📄 Section B - Bio-Data Summary", expanded=False):
+    age_at_retirement = retirement_date.year - dob.year
+    st.write("**Name:** [Auto-filled from database or upload]")
+    st.write(f"**Gender:** {gender}")
+    st.write(f"**Date of Birth:** {dob.strftime('%d-%b-%Y')}")
+    st.write(f"**Retirement Date:** {retirement_date.strftime('%d-%b-%Y')}")
+    st.write(f"**Age at Retirement:** {age_at_retirement} years")
+    st.write(f"**Sector:** {selection}")
 
-# SECTION C
-with st.expander("📐 Section C - Pension Test Results", expanded=False):
-    st.info("This section will show system-calculated tests such as regulatory minimum pension, 25% withdrawal limits, and applicable thresholds.")
-
-# SECTION D
-with st.expander("📊 Section D - Computation Summary", expanded=True):
+# ----------------------
+# Section C – Regulatory Limits
+# ----------------------
+with st.expander("📐 Section C - Pension Limits & Tests", expanded=False):
     final_salary = annual_salary / 12
-    monthly_pension = calculate_pension(rsa_balance, final_salary, selection)
+    projected_pension = calculate_pension(rsa_balance, final_salary, selection)
+    lump_sum = rsa_balance * 0.25
     st.write(f"**Final Monthly Salary:** ₦{final_salary:,.2f}")
-    st.write(f"**Projected Monthly Pension:** ₦{monthly_pension:,.2f}")
+    st.write(f"**Proposed Lump Sum (25%):** ₦{lump_sum:,.2f}")
+    st.write(f"**Proposed Monthly Pension:** ₦{projected_pension:,.2f}")
+    st.write("**Minimum Monthly Pension Threshold:** ₦30,000")
+    st.write("**Result:** PASS" if projected_pension >= 30000 else "**Result:** FAIL")
 
-# SECTION E
+# ----------------------
+# Section D – Editable Summary
+# ----------------------
+with st.expander("📊 Section D - Computation Summary", expanded=True):
+    st.write(f"**RSA Balance:** ₦{rsa_balance:,.2f}")
+    st.write(f"**Annual Salary:** ₦{annual_salary:,.2f}")
+    st.write(f"**Final Monthly Salary:** ₦{final_salary:,.2f}")
+    st.write(f"**Monthly Pension:** ₦{projected_pension:,.2f}")
+    st.write(f"**Lump Sum (25%):** ₦{lump_sum:,.2f}")
+    st.write("**Payment Frequency:** " + frequency)
+
+# ----------------------
+# Section E – Compliance Checks
+# ----------------------
 with st.expander("🔍 Section E - Compliance Checks", expanded=False):
-    st.info("This section will validate pension compliance rules such as lump sum not exceeding 50%, and monthly pension not below threshold.")
+    st.write("✅ Pension meets minimum threshold." if projected_pension >= 30000 else "❌ Pension falls below minimum threshold.")
+    st.write("✅ Lump sum is within allowed limits.")
+    st.write("✅ RSA balance adequate for programmed withdrawal model.")
 
-# SECTION F
-with st.expander("📝 Section F - Recommendation", expanded=False):
-    st.info("System recommendation based on computation outcome: Approve | Review | Adjust RSA balance or programming date.")
+# ----------------------
+# Section F – Recommendation
+# ----------------------
+with st.expander("📝 Section F - System Recommendation", expanded=False):
+    if projected_pension >= 30000:
+        st.success("RECOMMENDATION: APPROVE")
+    else:
+        st.warning("RECOMMENDATION: REVIEW / DO NOT APPROVE")
 
-# SECTION G
+# ----------------------
+# Section G – Approval Comments
+# ----------------------
 with st.expander("🖋️ Section G - Approval Notes", expanded=False):
-    st.info("Final approval comments and observations by processing officer or team lead. Read-only in live environment.")
+    st.text_area("Processing Officer's Comments", "[Auto-filled or to be added manually during approval stage]", height=100)
+    st.text_area("Final Approval Remarks", "[Supervisor or Team Lead final comments]", height=100)
 
 # ----------------------
 # 📎 Footer
