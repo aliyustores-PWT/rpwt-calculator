@@ -5,18 +5,6 @@ import streamlit as st
 import datetime as dt
 
 # ----------------------
-# 🔒 Password Protection
-# ----------------------
-def password_gate():
-    st.markdown("<h3 style='text-align: center;'>🔐 PenCom RPWT Pension Calculator</h3>", unsafe_allow_html=True)
-    pwd = st.text_input("Enter Password", type="password")
-    if pwd != "PenCom2025":
-        st.warning("Access denied. Enter the correct password to proceed.")
-        st.stop()
-
-password_gate()
-
-# ----------------------
 # 📌 Backend Settings
 # ----------------------
 SS_SC = {
