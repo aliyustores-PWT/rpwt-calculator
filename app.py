@@ -7,18 +7,41 @@ import datetime as dt
 # ----------------------
 # 📌 Backend Settings
 # ----------------------
+
 SS_SC = {
     "Sector": ["Public", "Private"],
     "Gender": ["M", "F"],
     "Frequency": ["Monthly", "Quarterly"]
 }
 
+# Default max months in Section D
 PublicMonths = 500
 PrivateMonths = 6
+
+# Mortality factor used in pension calculations
 mortality_factor = 10.5
-arrears_months = =ROUND(IF(OR($C$6 = "PUBLIC", $C$6 = "STATE"),IF(YEARFRAC($C$13, $C$14, 1) * 12 > 500, 500, YEARFRAC($C$13, $C$14, 1) * 12),IF(YEARFRAC($C$13, $C$14, 1) * 12 > 6, 6, YEARFRAC($C$13, $C$14, 1) * 12)),0)  # Example default value for max allowable arrears
+
 
 # ----------------------
+# 📌 Arrears Months Logic (converted from Excel)
+# ----------------------
+
+from datetime import datetime
+
+def calculate_arrears_months(sector, dob_str, retirement_date_str):
+    """
+    Returns the number of months in arrears for pension, capped at 500 (public) or 6 (private).
+    """
+    dob = datetime.strptime(dob_str, "%Y-%m-%d")
+    retirement_date = datetime.strptime(retirement_date_str, "%Y-%m-%d")
+
+    months_diff = (retirement_date.year - dob.year) * 12 + (retirement_date.month - dob.month)
+
+    if sector.upper() in ["PUBLIC", "STATE"]:
+        return min(months_diff, PublicMonths)
+    else:
+        return min(months_diff, PrivateMonths)
+
 # 🧮 Pension Calculation Logic
 # ----------------------
 def calculate_final_salary(annual_salary):
