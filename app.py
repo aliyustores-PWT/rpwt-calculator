@@ -1,4 +1,4 @@
-# RPWT Pension Calculator - PenCom Version 3.0 (Sections A–G)
+# RPWT Pension Calculator - PenCom Version 3.0 (Sections A–D)
 # By Aliyu S. Sani | Deployment Ready for Streamlit Cloud
 
 import streamlit as st
@@ -25,10 +25,10 @@ SS_SC = {
     "Frequency": ["Monthly", "Quarterly"]
 }
 
-PublicMonths = 204
-PrivateMonths = 192
+PublicMonths = 500
+PrivateMonths = 6
 mortality_factor = 10.5
-arrears_months = 36  # Example default value for max allowable arrears
+arrears_months = 500  # Example default value for max allowable arrears
 
 # ----------------------
 # 🧮 Pension Calculation Logic
@@ -39,7 +39,7 @@ def calculate_final_salary(annual_salary):
 def calculate_pension(rsa_balance, final_salary, sector):
     months = PublicMonths if sector == "Public" else PrivateMonths
     annuity = rsa_balance / (months * mortality_factor / 12)
-    min_pension = max(annuity, 30000)
+    min_pension = max(annuity, 0)
     return round(min_pension, 2)
 
 def calculate_age(birth_date, ref_date):
@@ -99,30 +99,6 @@ with st.expander("📊 Section D - Computation Summary", expanded=True):
     st.write(f"**Monthly Pension:** ₦{monthly_pension:,.2f}")
     st.write(f"**Lump Sum (25%):** ₦{lump_sum:,.2f}")
     st.write("**Payment Frequency:** " + frequency)
-
-# ----------------------
-# Section E – Compliance Checks
-# ----------------------
-with st.expander("🔍 Section E - Compliance Checks", expanded=False):
-    st.write("✅ Pension meets minimum threshold." if monthly_pension >= 30000 else "❌ Pension falls below minimum threshold.")
-    st.write("✅ Lump sum is within allowed limits.")
-    st.write("✅ RSA balance adequate for programmed withdrawal model.")
-
-# ----------------------
-# Section F – Recommendation
-# ----------------------
-with st.expander("📝 Section F - System Recommendation", expanded=False):
-    if monthly_pension >= 30000:
-        st.success("RECOMMENDATION: APPROVE")
-    else:
-        st.warning("RECOMMENDATION: REVIEW / DO NOT APPROVE")
-
-# ----------------------
-# Section G – Approval Comments
-# ----------------------
-with st.expander("🖋️ Section G - Approval Notes", expanded=False):
-    st.text_area("Processing Officer's Comments", "[Auto-filled or to be added manually during approval stage]", height=100)
-    st.text_area("Final Approval Remarks", "[Supervisor or Team Lead final comments]", height=100)
 
 # ----------------------
 # 📎 Footer
