@@ -16,7 +16,7 @@ SS_SC = {
 PublicMonths = 500
 PrivateMonths = 6
 mortality_factor = 10.5
-arrears_months = 500  # Example default value for max allowable arrears
+arrears_months = =ROUND(IF(OR($C$6 = "PUBLIC", $C$6 = "STATE"),IF(YEARFRAC($C$13, $C$14, 1) * 12 > 500, 500, YEARFRAC($C$13, $C$14, 1) * 12),IF(YEARFRAC($C$13, $C$14, 1) * 12 > 6, 6, YEARFRAC($C$13, $C$14, 1) * 12)),0)  # Example default value for max allowable arrears
 
 # ----------------------
 # 🧮 Pension Calculation Logic
