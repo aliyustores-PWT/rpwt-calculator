@@ -60,7 +60,7 @@ with st.expander("✍️ Section A - Retiree Information", expanded=True):
         selection = st.selectbox("Sector", SS_SC["Sector"])
     with col2:
         retirement_date = st.date_input("Retirement Date")
-        program_date = st.date_input("Date of Programming", dt.date.today())
+        consolidation_date = st.date_input("Date of Consolidation", dt.date.today())
         frequency = st.selectbox("Payment Frequency", SS_SC["Frequency"])
 
 # Live backend-calculated values
