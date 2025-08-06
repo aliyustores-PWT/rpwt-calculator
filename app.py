@@ -28,6 +28,7 @@ SS_SC = {
 PublicMonths = 204
 PrivateMonths = 192
 mortality_factor = 10.5
+arrears_months = 36  # Example default value for max allowable arrears
 
 # ----------------------
 # 🧮 Pension Calculation Logic
@@ -40,6 +41,9 @@ def calculate_pension(rsa_balance, final_salary, sector):
     annuity = rsa_balance / (months * mortality_factor / 12)
     min_pension = max(annuity, 30000)
     return round(min_pension, 2)
+
+def calculate_age(birth_date, ref_date):
+    return ref_date.year - birth_date.year - ((ref_date.month, ref_date.day) < (birth_date.month, birth_date.day))
 
 # ----------------------
 # 📋 RPWT Section A – Editable Input
@@ -63,18 +67,17 @@ with st.expander("✍️ Section A - Retiree Information", expanded=True):
 final_salary = calculate_final_salary(annual_salary)
 lump_sum = rsa_balance * 0.25
 monthly_pension = calculate_pension(rsa_balance, final_salary, selection)
-age_at_retirement = retirement_date.year - dob.year
+current_age = calculate_age(dob, dt.date.today())
+age_at_retirement = calculate_age(dob, retirement_date)
 
 # ----------------------
-# Section B – Bio-data Summary
+# Section B – Validated & Derived Data
 # ----------------------
-with st.expander("📄 Section B - Bio-Data Summary", expanded=False):
-    st.write("**Name:** [Auto-filled from database or upload]")
-    st.write(f"**Gender:** {gender}")
-    st.write(f"**Date of Birth:** {dob.strftime('%d-%b-%Y')}")
-    st.write(f"**Retirement Date:** {retirement_date.strftime('%d-%b-%Y')}")
+with st.expander("📄 Section B - Validated & Derived Information", expanded=False):
+    st.write(f"**Validated Annual Salary:** ₦{annual_salary:,.2f}")
+    st.write(f"**Maximum Allowable Months in Arrears:** {arrears_months} months")
+    st.write(f"**Current Age:** {current_age} years")
     st.write(f"**Age at Retirement:** {age_at_retirement} years")
-    st.write(f"**Sector:** {selection}")
 
 # ----------------------
 # Section C – Regulatory Limits
