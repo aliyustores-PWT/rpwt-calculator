@@ -21,7 +21,7 @@ password_gate()
 # ----------------------
 SS_SC = {
     "Sector": ["Public", "Private"],
-    "Gender": ["Male", "Female"],
+    "Gender": ["M", "F"],
     "Frequency": ["Monthly", "Quarterly"]
 }
 
@@ -32,10 +32,13 @@ mortality_factor = 10.5
 # ----------------------
 # 🧮 Pension Calculation Logic
 # ----------------------
+def calculate_final_salary(annual_salary):
+    return annual_salary / 12
+
 def calculate_pension(rsa_balance, final_salary, sector):
     months = PublicMonths if sector == "Public" else PrivateMonths
     annuity = rsa_balance / (months * mortality_factor / 12)
-    min_pension = max(annuity, 30000)  # Replace with official logic if available
+    min_pension = max(annuity, 30000)
     return round(min_pension, 2)
 
 # ----------------------
@@ -46,8 +49,8 @@ st.markdown("### 📋 RPWT Version 3.0 Form (Sections A – G)")
 with st.expander("✍️ Section A - Retiree Information", expanded=True):
     col1, col2 = st.columns(2)
     with col1:
-        rsa_balance = st.number_input("RSA Balance (₦)", min_value=0.0, format="%.2f")
-        annual_salary = st.number_input("Annual Salary (₦)", min_value=0.0, format="%.2f")
+        rsa_balance = st.number_input("RSA Balance (₦)", min_value=0.0, format="%.2f", step=1000.0)
+        annual_salary = st.number_input("Annual Salary (₦)", min_value=0.0, format="%.2f", step=1000.0)
         dob = st.date_input("Date of Birth")
         gender = st.selectbox("Gender", SS_SC["Gender"])
         selection = st.selectbox("Sector", SS_SC["Sector"])
@@ -56,11 +59,16 @@ with st.expander("✍️ Section A - Retiree Information", expanded=True):
         program_date = st.date_input("Date of Programming", dt.date.today())
         frequency = st.selectbox("Payment Frequency", SS_SC["Frequency"])
 
+# Live backend-calculated values
+final_salary = calculate_final_salary(annual_salary)
+lump_sum = rsa_balance * 0.25
+monthly_pension = calculate_pension(rsa_balance, final_salary, selection)
+age_at_retirement = retirement_date.year - dob.year
+
 # ----------------------
 # Section B – Bio-data Summary
 # ----------------------
 with st.expander("📄 Section B - Bio-Data Summary", expanded=False):
-    age_at_retirement = retirement_date.year - dob.year
     st.write("**Name:** [Auto-filled from database or upload]")
     st.write(f"**Gender:** {gender}")
     st.write(f"**Date of Birth:** {dob.strftime('%d-%b-%Y')}")
@@ -72,14 +80,11 @@ with st.expander("📄 Section B - Bio-Data Summary", expanded=False):
 # Section C – Regulatory Limits
 # ----------------------
 with st.expander("📐 Section C - Pension Limits & Tests", expanded=False):
-    final_salary = annual_salary / 12
-    projected_pension = calculate_pension(rsa_balance, final_salary, selection)
-    lump_sum = rsa_balance * 0.25
     st.write(f"**Final Monthly Salary:** ₦{final_salary:,.2f}")
     st.write(f"**Proposed Lump Sum (25%):** ₦{lump_sum:,.2f}")
-    st.write(f"**Proposed Monthly Pension:** ₦{projected_pension:,.2f}")
+    st.write(f"**Proposed Monthly Pension:** ₦{monthly_pension:,.2f}")
     st.write("**Minimum Monthly Pension Threshold:** ₦30,000")
-    st.write("**Result:** PASS" if projected_pension >= 30000 else "**Result:** FAIL")
+    st.write("**Result:** ✅ PASS" if monthly_pension >= 30000 else "**Result:** ❌ FAIL")
 
 # ----------------------
 # Section D – Editable Summary
@@ -88,7 +93,7 @@ with st.expander("📊 Section D - Computation Summary", expanded=True):
     st.write(f"**RSA Balance:** ₦{rsa_balance:,.2f}")
     st.write(f"**Annual Salary:** ₦{annual_salary:,.2f}")
     st.write(f"**Final Monthly Salary:** ₦{final_salary:,.2f}")
-    st.write(f"**Monthly Pension:** ₦{projected_pension:,.2f}")
+    st.write(f"**Monthly Pension:** ₦{monthly_pension:,.2f}")
     st.write(f"**Lump Sum (25%):** ₦{lump_sum:,.2f}")
     st.write("**Payment Frequency:** " + frequency)
 
@@ -96,7 +101,7 @@ with st.expander("📊 Section D - Computation Summary", expanded=True):
 # Section E – Compliance Checks
 # ----------------------
 with st.expander("🔍 Section E - Compliance Checks", expanded=False):
-    st.write("✅ Pension meets minimum threshold." if projected_pension >= 30000 else "❌ Pension falls below minimum threshold.")
+    st.write("✅ Pension meets minimum threshold." if monthly_pension >= 30000 else "❌ Pension falls below minimum threshold.")
     st.write("✅ Lump sum is within allowed limits.")
     st.write("✅ RSA balance adequate for programmed withdrawal model.")
 
@@ -104,7 +109,7 @@ with st.expander("🔍 Section E - Compliance Checks", expanded=False):
 # Section F – Recommendation
 # ----------------------
 with st.expander("📝 Section F - System Recommendation", expanded=False):
-    if projected_pension >= 30000:
+    if monthly_pension >= 30000:
         st.success("RECOMMENDATION: APPROVE")
     else:
         st.warning("RECOMMENDATION: REVIEW / DO NOT APPROVE")
