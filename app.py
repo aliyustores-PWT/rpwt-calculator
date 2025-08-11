@@ -1,12 +1,6 @@
-# RPWT Pension Calculator - PenCom Version 3.0 (Sections A–D)
-# By Aliyu S. Sani | Deployment Ready for Streamlit Cloud
-
-import streamlit as st
-import datetime as dt
-
-# ----------------------
-# 📌 Backend Settings
-# ----------------------
+# Backend constants and helper logic for RPWT v3.0
+from dataclasses import dataclass
+from datetime import date
 
 SS_SC = {
     "Sector": ["Public", "Private"],
@@ -14,105 +8,215 @@ SS_SC = {
     "Frequency": ["Monthly", "Quarterly"]
 }
 
-# Default max months in Section D
-PublicMonths = 500
-PrivateMonths = 6
+# As provided in your template notes
+PUBLIC_MONTHS = 500
+PRIVATE_MONTHS = 6
 
-# Mortality factor used in pension calculations
-mortality_factor = 10.5
+# Projected rate of return (%). In RPWT v3.0 this is 10.5%.
+PROJECTED_RATE_PCT = 10.5
 
+@dataclass
+class RPWTInputs:
+    sector: str
+    gender: str
+    frequency: str
+    dob: date
+    retirement_date: date
+    programming_date: date
+    annual_salary: float
+    rsa_balance: float
+    desired_lump_sum: float = 0.0
+    method: str = "Factor-based"  # or "Finance-PMT"
 
-# ----------------------
-# 📌 Arrears Months Logic (converted from Excel)
-# ----------------------
+def months_between(d1: date, d2: date) -> int:
+    """Approximate whole months between two dates, non-negative."""
+    if d2 < d1:
+        d1, d2 = d2, d1
+    years = d2.year - d1.year
+    months = years * 12 + (d2.month - d1.month)
+    if d2.day < d1.day:
+        months -= 1
+    return max(0, months)
 
-from datetime import datetime
+def age_years(on_date: date, dob: date) -> float:
+    if on_date < dob:
+        return 0.0
+    days = (on_date - dob).days
+    return round(days / 365.25, 2)
 
-def calculate_arrears_months(sector, dob_str, retirement_date_str):
+def final_salary_monthly(annual_salary: float) -> float:
+    return max(0.0, float(annual_salary) / 12.0)
+
+def sector_months(sector: str) -> int:
+    return PUBLIC_MONTHS if sector.lower() == "public" else PRIVATE_MONTHS
+
+def arrears_months(sector: str, retirement_date: date, programming_date: date) -> int:
+    cap = sector_months(sector)
+    raw = months_between(retirement_date, programming_date)
+    return min(cap, raw)
+
+def annuity_factor_based(balance: float, sector: str) -> float:
     """
-    Returns the number of months in arrears for pension, capped at 500 (public) or 6 (private).
+    Compatibility with the earlier pseudo-formula:
+    annuity = balance / (months * mortality_factor / 12)
+    Here we treat 'mortality_factor' as PROJECTED_RATE_PCT for parity with prior snippets.
     """
-    dob = datetime.strptime(dob_str, "%Y-%m-%d")
-    retirement_date = datetime.strptime(retirement_date_str, "%Y-%m-%d")
+    months = sector_months(sector)
+    mortality_factor = PROJECTED_RATE_PCT
+    denom = (months * mortality_factor / 12.0)
+    if denom <= 0:
+        return 0.0
+    return balance / denom
 
-    months_diff = (retirement_date.year - dob.year) * 12 + (retirement_date.month - dob.month)
+def annuity_pmt(balance: float, annual_rate_pct: float, months: int) -> float:
+    """Standard finance PMT: PMT = P * r / (1 - (1+r)^-n), r is monthly rate."""
+    if balance <= 0 or months <= 0:
+        return 0.0
+    r = (annual_rate_pct / 100.0) / 12.0
+    if r == 0:
+        return balance / months
+    denom = 1 - (1 + r) ** (-months)
+    if denom <= 0:
+        return 0.0
+    return balance * r / denom
 
-    if sector.upper() in ["PUBLIC", "STATE"]:
-        return min(months_diff, PublicMonths)
-    else:
-        return min(months_diff, PrivateMonths)
+def currency_fmt(x: float) -> str:
+    return f"₦{x:,.2f}"
+import streamlit as st
+from datetime import date
+from backend import (
+    SS_SC, RPWTInputs, months_between, age_years, final_salary_monthly,
+    sector_months, arrears_months, annuity_factor_based, annuity_pmt,
+    PROJECTED_RATE_PCT, currency_fmt
+)
 
-# 🧮 Pension Calculation Logic
-# ----------------------
-def calculate_final_salary(annual_salary):
-    return annual_salary / 12
+st.set_page_config(page_title="RPWT v3.0 Pension Calculator", page_icon="📈", layout="centered")
 
-def calculate_pension(rsa_balance, final_salary, sector):
-    months = PublicMonths if sector == "Public" else PrivateMonths
-    annuity = rsa_balance / (months * mortality_factor / 12)
-    min_pension = max(annuity, 0)
-    return round(min_pension, 2)
+st.title("RPWT v3.0 Pension Calculator • PenCom")
+st.caption("Real-time calculator for Programmed Withdrawal (Version 3.0) — for testing & demonstration.")
 
-def calculate_age(birth_date, ref_date):
-    return ref_date.year - birth_date.year - ((ref_date.month, ref_date.day) < (birth_date.month, birth_date.day))
+with st.expander("About this tool", expanded=False):
+    st.markdown(
+        """
+        - **Projected Rate of Return**: 10.5% (as per RPWT v3.0 notes).
+        - **Sector-based months cap**: Public → 500 months; Private → 6 months.
+        - **Arrears months** = min(cap by sector, months between **Retirement Date** and **Date of Programming**).
+        - **Two methods** for monthly pension:
+            1. **Factor-based** (compatibility with earlier pseudo-formula), and
+            2. **Finance PMT** using 10.5% annual rate.
+        - Results update as you type. Currency shows **₦** with 2 decimals.
+        """
+    )
 
-# ----------------------
-# 📋 RPWT Section A – Editable Input
-# ----------------------
-st.markdown("### 📋 RPWT Version 3.0 Form (Sections A – G)")
+st.subheader("Section A — Input Details")
 
-with st.expander("✍️ Section A - Retiree Information", expanded=True):
-    col1, col2 = st.columns(2)
-    with col1:
-        rsa_balance = st.number_input("RSA Balance (₦)", min_value=0.0, format="%.2f", step=1000.0)
-        annual_salary = st.number_input("Annual Salary (₦)", min_value=0.0, format="%.2f", step=1000.0)
-        dob = st.date_input("Date of Birth")
-        gender = st.selectbox("Gender", SS_SC["Gender"])
-        selection = st.selectbox("Sector", SS_SC["Sector"])
-    with col2:
-        retirement_date = st.date_input("Retirement Date")
-        program_date = st.date_input("Date of Programming", dt.date.today())
-        frequency = st.selectbox("Payment Frequency", SS_SC["Frequency"])
+col1, col2 = st.columns(2)
+with col1:
+    sector = st.selectbox("Sector", SS_SC["Sector"])
+    gender = st.selectbox("Gender", SS_SC["Gender"])
+    frequency = st.selectbox("Payment Frequency", SS_SC["Frequency"])
 
-# Live backend-calculated values
-final_salary = calculate_final_salary(annual_salary)
-lump_sum = rsa_balance * 0.25
-monthly_pension = calculate_pension(rsa_balance, final_salary, selection)
-current_age = calculate_age(dob, dt.date.today())
-age_at_retirement = calculate_age(dob, retirement_date)
+with col2:
+    dob = st.date_input("Date of Birth", value=date(1970, 1, 1))
+    retirement_date = st.date_input("Retirement Date", value=date(2025, 1, 1))
+    programming_date = st.date_input("Date of Programming", value=date.today())
 
-# ----------------------
-# Section B – Validated & Derived Data
-# ----------------------
-with st.expander("📄 Section B - Validated & Derived Information", expanded=False):
-    st.write(f"**Validated Annual Salary:** ₦{annual_salary:,.2f}")
-    st.write(f"**Maximum Allowable Months in Arrears:** {arrears_months} months")
-    st.write(f"**Current Age:** {current_age} years")
-    st.write(f"**Age at Retirement:** {age_at_retirement} years")
+col3, col4 = st.columns(2)
+with col3:
+    annual_salary = st.number_input("Annual Salary (₦)", min_value=0.0, step=1000.0, format="%.2f")
+with col4:
+    rsa_balance = st.number_input("RSA Balance (₦)", min_value=0.0, step=1000.0, format="%.2f")
 
-# ----------------------
-# Section C – Regulatory Limits
-# ----------------------
-with st.expander("📐 Section C - Pension Limits & Tests", expanded=False):
-    st.write(f"**Final Monthly Salary:** ₦{final_salary:,.2f}")
-    st.write(f"**Proposed Lump Sum (25%):** ₦{lump_sum:,.2f}")
-    st.write(f"**Proposed Monthly Pension:** ₦{monthly_pension:,.2f}")
-    st.write("**Minimum Monthly Pension Threshold:** ₦30,000")
-    st.write("**Result:** ✅ PASS" if monthly_pension >= 30000 else "**Result:** ❌ FAIL")
+desired_lump_sum = st.number_input("Desired Lump Sum (₦) — optional", min_value=0.0, step=1000.0, format="%.2f")
 
-# ----------------------
-# Section D – Editable Summary
-# ----------------------
-with st.expander("📊 Section D - Computation Summary", expanded=True):
-    st.write(f"**RSA Balance:** ₦{rsa_balance:,.2f}")
-    st.write(f"**Annual Salary:** ₦{annual_salary:,.2f}")
-    st.write(f"**Final Monthly Salary:** ₦{final_salary:,.2f}")
-    st.write(f"**Monthly Pension:** ₦{monthly_pension:,.2f}")
-    st.write(f"**Lump Sum (25%):** ₦{lump_sum:,.2f}")
-    st.write("**Payment Frequency:** " + frequency)
+method = st.radio(
+    "Calculation Method",
+    ["Factor-based", f"Finance-PMT @ {PROJECTED_RATE_PCT}%"],
+    horizontal=True
+)
 
-# ----------------------
-# 📎 Footer
-# ----------------------
-st.markdown("---")
-st.caption("Designed by Aliyu S. Sani | PenCom RPWT v3.0 | August 2025")
+# Prepare inputs
+inp = RPWTInputs(
+    sector=sector,
+    gender=gender,
+    frequency=frequency,
+    dob=dob,
+    retirement_date=retirement_date,
+    programming_date=programming_date,
+    annual_salary=annual_salary,
+    rsa_balance=rsa_balance,
+    desired_lump_sum=desired_lump_sum,
+    method="Factor-based" if method == "Factor-based" else "Finance-PMT"
+)
+
+st.divider()
+st.subheader("Derived Values & Checks")
+
+age_ret = age_years(inp.retirement_date, inp.dob)
+age_prog = age_years(inp.programming_date, inp.dob)
+fsal = final_salary_monthly(inp.annual_salary)
+cap_months = sector_months(inp.sector)
+arr_m = arrears_months(inp.sector, inp.retirement_date, inp.programming_date)
+
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.metric("Age at Retirement", f"{age_ret} yrs")
+with c2:
+    st.metric("Age at Programming", f"{age_prog} yrs")
+with c3:
+    st.metric("Final Salary (Monthly)", currency_fmt(fsal))
+
+c4, c5, c6 = st.columns(3)
+with c4:
+    st.metric("Sector Months Cap", f"{cap_months} months")
+with c5:
+    st.metric("Arrears Months", f"{arr_m} months")
+with c6:
+    months_diff = months_between(inp.retirement_date, inp.programming_date)
+    st.metric("Months Between Ret. & Prog.", f"{months_diff} months")
+
+st.divider()
+st.subheader("Pension Computation")
+
+residual_balance = max(0.0, inp.rsa_balance - inp.desired_lump_sum)
+if residual_balance < inp.rsa_balance and inp.desired_lump_sum > 0:
+    st.info(f"Residual RSA after Lump Sum: {currency_fmt(residual_balance)}", icon="💡")
+
+if inp.method == "Factor-based":
+    monthly_pension = annuity_factor_based(residual_balance, inp.sector)
+else:
+    monthly_pension = annuity_pmt(residual_balance, PROJECTED_RATE_PCT, sector_months(inp.sector))
+
+# Frequency adjustment
+if inp.frequency == "Monthly":
+    pension_per_period = monthly_pension
+elif inp.frequency == "Quarterly":
+    pension_per_period = monthly_pension * 3
+else:
+    pension_per_period = monthly_pension  # fallback
+
+arrears_value = monthly_pension * arr_m
+
+c7, c8, c9 = st.columns(3)
+with c7:
+    st.metric("Monthly Pension", currency_fmt(monthly_pension))
+with c8:
+    st.metric(f"Pension per {inp.frequency}", currency_fmt(pension_per_period))
+with c9:
+    st.metric("Arrears Value", currency_fmt(arrears_value))
+
+st.divider()
+st.subheader("Summary")
+
+st.write(
+    f"""
+- **Sector**: {inp.sector}  •  **Gender**: {inp.gender}  •  **Frequency**: {inp.frequency}  
+- **DOB**: {inp.dob}  •  **Retirement**: {inp.retirement_date}  •  **Programming**: {inp.programming_date}  
+- **Annual Salary**: {currency_fmt(inp.annual_salary)}  •  **Final Salary (Monthly)**: {currency_fmt(fsal)}  
+- **RSA Balance**: {currency_fmt(inp.rsa_balance)}  •  **Desired Lump Sum**: {currency_fmt(inp.desired_lump_sum)}  •  **Residual**: {currency_fmt(residual_balance)}  
+- **Method**: {inp.method}  •  **Projected Return**: {PROJECTED_RATE_PCT}%  
+- **Monthly Pension**: {currency_fmt(monthly_pension)}  •  **Arrears Months**: {arr_m}  •  **Arrears Value**: {currency_fmt(arrears_value)}
+"""
+)
+
+st.caption("This tool is for guidance only. For regulatory use, validate with the official RPWT v3.0 Excel and PenCom circulars.")
