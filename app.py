@@ -1,9 +1,7 @@
-import streamlit as st
-from datetime import date
 from backend import (
     SS_SC, RPWTInputs, months_between, age_years, final_salary_monthly,
-    sector_months, arrears_months, annuity_factor_based, annuity_pmt,
-    PROJECTED_RATE_PCT, currency_fmt
+    sector_months, arrears_months, currency_fmt, PROJECTED_RATE_PCT,
+    load_mortality_df, gendered_pension_factor_based, gendered_pension_interest_based
 )
 
 st.set_page_config(page_title="RPWT v3.0 Pension Calculator", page_icon="📈", layout="centered")
