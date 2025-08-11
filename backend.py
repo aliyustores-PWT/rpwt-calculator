@@ -1,84 +1,136 @@
-# Backend constants and helper logic for RPWT v3.0
-from dataclasses import dataclass
-from datetime import date
+import pandas as pd
+from typing import Optional, Literal, Dict
+# ... keep your existing imports/constants/classes ...
 
-SS_SC = {
-    "Sector": ["Public", "Private"],
-    "Gender": ["M", "F"],
-    "Frequency": ["Monthly", "Quarterly"]
-}
+WOOLHOUSE_11_24 = 11.0 / 24.0  # monthly conversion adjustment from annual factor
 
-# As provided in your template notes
-PUBLIC_MONTHS = 500
-PRIVATE_MONTHS = 6
-
-# Projected rate of return (%). In RPWT v3.0 this is 10.5%.
-PROJECTED_RATE_PCT = 10.5
-
-@dataclass
-class RPWTInputs:
-    sector: str
-    gender: str
-    frequency: str
-    dob: date
-    retirement_date: date
-    programming_date: date
-    annual_salary: float
-    rsa_balance: float
-    desired_lump_sum: float = 0.0
-    method: str = "Factor-based"  # or "Finance-PMT"
-
-def months_between(d1: date, d2: date) -> int:
-    """Approximate whole months between two dates, non-negative."""
-    if d2 < d1:
-        d1, d2 = d2, d1
-    years = d2.year - d1.year
-    months = years * 12 + (d2.month - d1.month)
-    if d2.day < d1.day:
-        months -= 1
-    return max(0, months)
-
-def age_years(on_date: date, dob: date) -> float:
-    if on_date < dob:
-        return 0.0
-    days = (on_date - dob).days
-    return round(days / 365.25, 2)
-
-def final_salary_monthly(annual_salary: float) -> float:
-    return max(0.0, float(annual_salary) / 12.0)
-
-def sector_months(sector: str) -> int:
-    return PUBLIC_MONTHS if sector.lower() == "public" else PRIVATE_MONTHS
-
-def arrears_months(sector: str, retirement_date: date, programming_date: date) -> int:
-    cap = sector_months(sector)
-    raw = months_between(retirement_date, programming_date)
-    return min(cap, raw)
-
-def annuity_factor_based(balance: float, sector: str) -> float:
+def _pick_nx_dx_col(df: pd.DataFrame) -> pd.Series:
     """
-    Compatibility with the earlier pseudo-formula:
-    annuity = balance / (months * mortality_factor / 12)
-    Here we treat 'mortality_factor' as PROJECTED_RATE_PCT for parity with prior snippets.
+    Try to find the nx/dx column in a sheet.
+    Priority by name; else fall back to the 12th column (Excel VLOOKUP col_index_num=12).
     """
-    months = sector_months(sector)
-    mortality_factor = PROJECTED_RATE_PCT
-    denom = (months * mortality_factor / 12.0)
-    if denom <= 0:
-        return 0.0
-    return balance / denom
+    candidates = [c for c in df.columns if str(c).strip().lower() in {"nx/dx", "nx_dx", "nxdx", "nx over dx", "nx:dx"}]
+    if candidates:
+        return df[candidates[0]]
 
-def annuity_pmt(balance: float, annual_rate_pct: float, months: int) -> float:
-    """Standard finance PMT: PMT = P * r / (1 - (1+r)^-n), r is monthly rate."""
-    if balance <= 0 or months <= 0:
-        return 0.0
-    r = (annual_rate_pct / 100.0) / 12.0
-    if r == 0:
-        return balance / months
-    denom = 1 - (1 + r) ** (-months)
-    if denom <= 0:
-        return 0.0
-    return balance * r / denom
+    # If not named, mimic your VLOOKUP(C..., ..., 12):
+    # Excel is 1-based; pandas is 0-based → index 11 is the 12th column.
+    if df.shape[1] >= 12:
+        return df.iloc[:, 11]
 
-def currency_fmt(x: float) -> str:
-    return f"₦{x:,.2f}"
+    raise ValueError("Cannot locate nx/dx column (named or 12th column).")
+
+def load_mortality_df(file) -> pd.DataFrame:
+    """
+    Accepts CSV or Excel. Two supported layouts:
+
+    A) Single table with columns:
+       age, nx_dx_M, nx_dx_F [, ex_months_M, ex_months_F]
+       → We'll compute ax_M = nx_dx_M - 11/24; ax_F = nx_dx_F - 11/24
+
+    B) Excel with two sheets 'Male' and 'Female', each with an 'age' column and an nx/dx column
+       (either named or in the 12th column). We merge on age and build ax_M/ax_F via 11/24 rule.
+    """
+    name = getattr(file, "name", "").lower()
+    if name.endswith((".xlsx", ".xls")):
+        xls = pd.ExcelFile(file)
+        sheet_names = [s.lower() for s in xls.sheet_names]
+
+        if "male" in sheet_names and "female" in sheet_names:
+            male = xls.parse(xls.sheet_names[sheet_names.index("male")])
+            female = xls.parse(xls.sheet_names[sheet_names.index("female")])
+
+            # normalize columns
+            for d in (male, female):
+                d.columns = [str(c).strip() for c in d.columns]
+                if "age" not in d.columns:
+                    raise ValueError("Each sheet must include an 'age' column.")
+                d = d.sort_values("age").reset_index(drop=True)
+
+            nx_dx_M = _pick_nx_dx_col(male).rename("nx_dx_M")
+            male = pd.concat([male[["age"]], nx_dx_M], axis=1)
+            nx_dx_F = _pick_nx_dx_col(female).rename("nx_dx_F")
+            female = pd.concat([female[["age"]], nx_dx_F], axis=1)
+
+            df = pd.merge(male, female, on="age", how="inner")
+            # Optional terms if you include them in extra sheets/cols; we won't assume here.
+
+        else:
+            # Single-sheet Excel: treat like CSV
+            df = xls.parse(xls.sheet_names[0])
+            df.columns = [str(c).strip() for c in df.columns]
+    else:
+        df = pd.read_csv(file)
+        df.columns = [str(c).strip() for c in df.columns]
+
+    # Case A: already has nx_dx_M / nx_dx_F
+    if "nx_dx_M" in df.columns and "nx_dx_F" in df.columns:
+        pass
+    # Case B fallback: maybe you already computed ax_M/ax_F in the file
+    elif "ax_M" in df.columns and "ax_F" in df.columns:
+        # If ax_* are present, we can work with them directly.
+        # Still, build nx_dx_* for reference using the inverse Woolhouse approx:
+        df["nx_dx_M"] = df["ax_M"] + WOOLHOUSE_11_24
+        df["nx_dx_F"] = df["ax_F"] + WOOLHOUSE_11_24
+    else:
+        # If neither present, try to infer both from a single nx/dx column (not typical).
+        raise ValueError("Mortality table must provide nx_dx_M & nx_dx_F, or ax_M & ax_F, or Male/Female sheets.")
+
+    if "ax_M" not in df.columns:
+        df["ax_M"] = df["nx_dx_M"] - WOOLHOUSE_11_24
+    if "ax_F" not in df.columns:
+        df["ax_F"] = df["nx_dx_F"] - WOOLHOUSE_11_24
+
+    # Keep optional remaining months if you add them
+    for c in ["ex_months_M", "ex_months_F"]:
+        if c not in df.columns:
+            df[c] = pd.NA
+
+    # Final tidy
+    keep = ["age", "nx_dx_M", "nx_dx_F", "ax_M", "ax_F", "ex_months_M", "ex_months_F"]
+    df = df[keep].sort_values("age").reset_index(drop=True)
+    return df
+
+def nearest_row_by_age(df: pd.DataFrame, age: float) -> pd.Series:
+    nearest_age = int(round(age))
+    nearest_age = max(min(nearest_age, int(df["age"].max())), int(df["age"].min()))
+    row = df.loc[df["age"] == nearest_age]
+    if row.empty:
+        idx = (df["age"] - age).abs().idxmin()
+        row = df.loc[[idx]]
+    return row.squeeze()
+
+def gendered_pension_factor_based(residual: float, gender: str, age_prog: float, mort_df: Optional[pd.DataFrame]) -> float:
+    """
+    Factor-based monthly pension using a_x^(12) ≈ (nx/dx) - 11/24 at 10.5%.
+    """
+    if residual <= 0:
+        return 0.0
+    if mort_df is None:
+        # Fallback if table not provided
+        ax = 140.0 if gender == "M" else 150.0
+        return residual / ax
+    row = nearest_row_by_age(mort_df, age_prog)
+    ax = float(row["ax_M"] if gender == "M" else row["ax_F"])
+    return residual / ax
+
+def gendered_pension_interest_based(residual: float, gender: str, age_prog: float, mort_df: Optional[pd.DataFrame]) -> float:
+    """
+    Interest-based (PMT) using 10.5% and a term from table:
+    - Prefer ex_months_* if provided
+    - Else derive a term n so that annuity factor a(i,n) ≈ a_x^(12)
+    """
+    if residual <= 0:
+        return 0.0
+    if mort_df is None:
+        n = 240 if gender == "F" else 220
+        return pmt_from_term(residual, PROJECTED_RATE_PCT, n)
+
+    row = nearest_row_by_age(mort_df, age_prog)
+    ex_col = "ex_months_M" if gender == "M" else "ex_months_F"
+    if ex_col in row and pd.notna(row[ex_col]):
+        n = int(round(float(row[ex_col])))
+    else:
+        ax = float(row["ax_M"] if gender == "M" else row["ax_F"])
+        n = derive_term_from_factor(ax, PROJECTED_RATE_PCT, cap=720)
+    return pmt_from_term(residual, PROJECTED_RATE_PCT, n)
